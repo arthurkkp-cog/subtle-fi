@@ -4,7 +4,22 @@ import {
   addFundingSource,
   createDwollaCustomer,
 } from "@/lib/actions/dwolla.actions";
-import { createAdminClient, createSessionClient } from "@/lib/appwrite";
+import {
+  createUser,
+  createSession,
+  deleteSession,
+  getSession,
+  getUserById,
+  verifyPassword,
+  updateUser,
+  User,
+} from "@/lib/db";
+import {
+  createBank as createBankRecord,
+  getBanksByUserId,
+  getBankById as getBankByIdFromDb,
+  getBankByAccountId as getBankByAccountIdFromDb,
+} from "@/lib/db";
 import { plaidClient } from "@/lib/plaid";
 import {
   encryptId,
@@ -13,7 +28,6 @@ import {
 } from "@/lib/utils";
 import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
-import { ID, Query } from "node-appwrite";
 import {
   CountryCode,
   ProcessorTokenCreateRequest,
@@ -21,23 +35,10 @@ import {
   Products,
 } from "plaid";
 
-const {
-  APPWRITE_DATABASE_ID: DATABASE_ID,
-  APPWRITE_USER_COLLECTION_ID: USER_COLLECTION_ID,
-  APPWRITE_BANK_COLLECTION_ID: BANK_COLLECTION_ID,
-} = process.env;
-
 export const getUserInfo = async ({ userId }: UserInfoProps) => {
   try {
-    const { database } = await createAdminClient();
-
-    const user = await database.listDocuments(
-      DATABASE_ID!,
-      USER_COLLECTION_ID!,
-      [Query.equal("userId", [userId])],
-    );
-
-    return parseStringify(user.documents[0]);
+    const user = await getUserById(userId);
+    return parseStringify(user);
   } catch (error) {
     console.error("Error", error);
   }
@@ -45,17 +46,20 @@ export const getUserInfo = async ({ userId }: UserInfoProps) => {
 
 export const signInUser = async ({ email, password }: SignInProps) => {
   try {
-    const { account } = await createAdminClient();
-    const session = await account.createEmailPasswordSession(email, password);
+    const user = await verifyPassword(email, password);
+    if (!user) {
+      throw new Error("Invalid email or password");
+    }
 
-    cookies().set("appwrite-session", session.secret, {
+    const session = await createSession(user.id);
+
+    cookies().set("session-token", session.id, {
       path: "/",
       httpOnly: true,
       sameSite: "strict",
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
+      expires: session.expiresAt,
     });
-
-    const user = await getUserInfo({ userId: session.userId });
 
     return parseStringify(user);
   } catch (error) {
@@ -69,46 +73,49 @@ export const createNewUser = async ({
 }: SignUpParams) => {
   const { email, firstName, lastName } = userData;
 
-  let newUserAccount;
   try {
-    const { account, database } = await createAdminClient();
-    newUserAccount = await account.create(
-      ID.unique(),
+    // Create user in local database
+    const newUser = await createUser({
       email,
       password,
-      `${firstName} ${lastName}`,
-    );
-
-    if (!newUserAccount) throw new Error("Error creating user");
-
-    const dwollaCustomerUrl = await createDwollaCustomer({
-      ...userData,
-      type: "personal",
+      firstName,
+      lastName,
+      address1: userData.address1,
+      city: userData.city,
+      state: userData.state,
+      postalCode: userData.postalCode,
+      dateOfBirth: userData.dateOfBirth,
+      ssn: userData.ssn,
     });
 
-    if (!dwollaCustomerUrl) throw new Error("Error creating Dwolla customer");
+    if (!newUser) throw new Error("Error creating user");
 
-    const dwollaCustomerId = extractCustomerIdFromUrl(dwollaCustomerUrl);
-
-    const newUser = await database.createDocument(
-      DATABASE_ID!,
-      USER_COLLECTION_ID!,
-      ID.unique(),
-      {
+    // Try to create Dwolla customer (optional - will fail gracefully if not configured)
+    let dwollaCustomerId: string | undefined;
+    let dwollaCustomerUrl: string | undefined;
+    try {
+      const dwollaResult = await createDwollaCustomer({
         ...userData,
-        userId: newUserAccount.$id,
-        dwollaCustomerId,
-        dwollaCustomerUrl,
-      },
-    );
+        type: "personal",
+      });
+      dwollaCustomerUrl = dwollaResult ?? undefined;
+      if (dwollaCustomerUrl) {
+        dwollaCustomerId = extractCustomerIdFromUrl(dwollaCustomerUrl);
+        await updateUser(newUser.id, { dwollaCustomerId, dwollaCustomerUrl });
+      }
+    } catch (dwollaError) {
+      console.warn("Dwolla customer creation skipped:", dwollaError);
+    }
 
-    const session = await account.createEmailPasswordSession(email, password);
+    // Create session
+    const session = await createSession(newUser.id);
 
-    cookies().set("appwrite-session", session.secret, {
+    cookies().set("session-token", session.id, {
       path: "/",
       httpOnly: true,
       sameSite: "strict",
-      secure: true,
+      secure: process.env.NODE_ENV === "production",
+      expires: session.expiresAt,
     });
 
     return parseStringify(newUser);
@@ -119,12 +126,17 @@ export const createNewUser = async ({
 
 export async function getCurrentUser() {
   try {
-    const { account } = await createSessionClient();
+    const sessionToken = cookies().get("session-token");
+    if (!sessionToken?.value) {
+      return null;
+    }
 
-    const result = await account.get();
+    const session = await getSession(sessionToken.value);
+    if (!session) {
+      return null;
+    }
 
-    const user = await getUserInfo({ userId: result.$id });
-
+    const user = await getUserById(session.userId);
     return parseStringify(user);
   } catch (error) {
     console.log(error);
@@ -134,9 +146,11 @@ export async function getCurrentUser() {
 
 export const signOutUser = async () => {
   try {
-    const { account } = await createSessionClient();
-    cookies().delete("appwrite-session");
-    await account.deleteSession("current");
+    const sessionToken = cookies().get("session-token");
+    if (sessionToken?.value) {
+      await deleteSession(sessionToken.value);
+    }
+    cookies().delete("session-token");
   } catch (error) {
     console.error("Error", error);
   }
@@ -146,7 +160,7 @@ export const createLinkToken = async (user: User) => {
   try {
     const tokenParams = {
       user: {
-        client_user_id: user.$id,
+        client_user_id: user.$id || user.id,
       },
       client_name: `${user.firstName} ${user.lastName}`,
       products: ["auth"] as Products[],
@@ -172,20 +186,14 @@ export const createBankAccount = async ({
   shareableId,
 }: CreateBankAccountProps) => {
   try {
-    const { database } = await createAdminClient();
-    const bankAccount = await database.createDocument(
-      DATABASE_ID!,
-      BANK_COLLECTION_ID!,
-      ID.unique(),
-      {
-        userId,
-        bankId,
-        accountId,
-        accessToken,
-        fundingSourceUrl,
-        shareableId,
-      },
-    );
+    const bankAccount = await createBankRecord({
+      userId,
+      bankId,
+      accountId,
+      accessToken,
+      fundingSourceUrl,
+      shareableId,
+    });
     return parseStringify(bankAccount);
   } catch (error) {
     console.log(error);
@@ -226,7 +234,7 @@ export const exchangePublicToken = async ({
 
     // Create a new funding source URL for the account using the Dwolla customer ID, processor token, and bank name
     const fundingSourceUrl = await addFundingSource({
-      dwollaCustomerId: user.dwollaCustomerId,
+      dwollaCustomerId: user.dwollaCustomerId!,
       processorToken,
       bankName: accountData.name,
     });
@@ -236,7 +244,7 @@ export const exchangePublicToken = async ({
 
     // Create a bank account using the user ID, item ID, and account ID, access token, funding source URL, and sharable ID
     await createBankAccount({
-      userId: user.$id,
+      userId: user.id || user.$id!,
       bankId: itemId,
       accountId: accountData.account_id,
       accessToken,
@@ -259,15 +267,8 @@ export const exchangePublicToken = async ({
 // get user bank accounts
 export const getBanks = async ({ userId }: BanksProps) => {
   try {
-    const { database } = await createAdminClient();
-
-    const banks = await database.listDocuments(
-      DATABASE_ID!,
-      BANK_COLLECTION_ID!,
-      [Query.equal("userId", [userId])],
-    );
-
-    return parseStringify(banks.documents);
+    const banks = await getBanksByUserId(userId);
+    return parseStringify(banks);
   } catch (error) {
     console.error("Error:", error);
   }
@@ -276,17 +277,8 @@ export const getBanks = async ({ userId }: BanksProps) => {
 // get specific bank from bank collection by document id
 export const getBank = async ({ documentId }: BankProps) => {
   try {
-    const { database } = await createAdminClient();
-
-    const bank = await database.listDocuments(
-      DATABASE_ID!,
-      BANK_COLLECTION_ID!,
-      [Query.equal("$id", [documentId])],
-    );
-
-    // if (bank.total !== 1) return null;
-
-    return parseStringify(bank.documents[0]);
+    const bank = await getBankByIdFromDb(documentId);
+    return parseStringify(bank);
   } catch (error) {
     console.error("Error", error);
   }
@@ -297,17 +289,8 @@ export const getBankByAccountId = async ({
   accountId,
 }: BankByAccountIdProps) => {
   try {
-    const { database } = await createAdminClient();
-
-    const bank = await database.listDocuments(
-      DATABASE_ID!,
-      BANK_COLLECTION_ID!,
-      [Query.equal("accountId", [accountId])],
-    );
-
-    if (bank.total !== 1) return null;
-
-    return parseStringify(bank.documents[0]);
+    const bank = await getBankByAccountIdFromDb(accountId);
+    return parseStringify(bank);
   } catch (error) {
     console.error("Error", error);
     return null;
