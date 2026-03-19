@@ -83,16 +83,33 @@ jobs:
 
   analyze-logs:
     name: Devin CLI - Analyze Build Logs
-    needs: [build]
-    if: ${{ failure() }}
+    needs: [lint, typecheck, build]
+    if: ${{ always() && (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.build.result == 'failure') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Download build log
+        id: download-log
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: build-log
+
+      - name: Collect failure context
+        run: |
+          echo "=== CI Failure Summary ===" > ci-context.txt
+          echo "Lint: ${{ needs.lint.result }}" >> ci-context.txt
+          echo "Type Check: ${{ needs.typecheck.result }}" >> ci-context.txt
+          echo "Build: ${{ needs.build.result }}" >> ci-context.txt
+          echo "" >> ci-context.txt
+          if [ -f build-output.log ]; then
+            echo "=== Build Output Log ==="  >> ci-context.txt
+            cat build-output.log >> ci-context.txt
+          else
+            echo "No build log available (build job was skipped or did not produce output)." >> ci-context.txt
+            echo "The failure likely occurred in an earlier job (lint or typecheck)." >> ci-context.txt
+          fi
 
       - name: Install Devin CLI
         run: |
@@ -107,7 +124,7 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
           devin -p --permission-mode dangerous \
-            -- "Read the file at ./build-output.log. It contains the CI build output for a Next.js application. Provide a concise summary of: 1) What failed, 2) Why it failed, 3) Suggested fixes. Be direct and actionable." \
+            -- "Read the file at ./ci-context.txt. It contains CI failure context for a Next.js application including which jobs failed (lint, typecheck, build) and any available build logs. Analyze the codebase and the failure context to provide a concise summary of: 1) What failed, 2) Why it failed, 3) Suggested fixes. Be direct and actionable." \
             | tee analysis-output.txt
 
           echo '```' >> "$GITHUB_STEP_SUMMARY"
