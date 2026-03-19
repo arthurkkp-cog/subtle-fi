@@ -111,10 +111,24 @@ jobs:
             echo "The failure likely occurred in an earlier job (lint or typecheck)." >> ci-context.txt
           fi
 
-      - name: Install Devin CLI
+      - name: Install and authenticate Devin CLI
+        env:
+          WINDSURF_API_KEY: ${{ secrets.WINDSURF_API_KEY }}
         run: |
-          curl -fsSL https://cli.devin.ai/install.sh | bash
+          # Download the install script and remove the interactive `setup` call
+          # so it runs headlessly in CI (the binary installs fine without it)
+          curl -fsSL https://cli.devin.ai/install.sh | sed '/setup$/d' | bash
+
+          # Write credentials file for headless auth (same as Docker approach in docs)
+          mkdir -p "$HOME/.local/share/devin"
+          echo "windsurf_api_key = \"$WINDSURF_API_KEY\"" > "$HOME/.local/share/devin/credentials.toml"
+
+          # Add to PATH
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # Verify
+          devin --version
 
       - name: Analyze build logs with Devin CLI
         env:
