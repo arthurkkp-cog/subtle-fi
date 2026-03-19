@@ -113,7 +113,7 @@ jobs:
 
       - name: Install Devin CLI
         run: |
-          curl -fsSL https://static.devin.ai/cli-insiders-d029bf81/install.sh | bash
+          curl -fsSL https://cli.devin.ai/install.sh | bash
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Analyze build logs with Devin CLI
