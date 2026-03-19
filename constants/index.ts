@@ -10,6 +10,11 @@ export const sidebarLinks = [
     label: "My Banks",
   },
   {
+    imgURL: "/icons/credit-card.svg",
+    route: "/my-loans",
+    label: "My Loans",
+  },
+  {
     imgURL: "/icons/transaction.svg",
     route: "/transaction-history",
     label: "Transaction History",
