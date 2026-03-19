@@ -60,10 +60,37 @@ function getDb(): DatabaseType {
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
   );
 
+  CREATE TABLE IF NOT EXISTS loan_applications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    loan_type TEXT NOT NULL CHECK(loan_type IN ('mortgage', 'auto', 'personal', 'education')),
+    requested_amount REAL NOT NULL,
+    term_months INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'submitted', 'under_review', 'approved', 'denied')),
+    estimated_apr REAL NOT NULL DEFAULT 0,
+    estimated_monthly_payment REAL NOT NULL DEFAULT 0,
+    conditional_fields TEXT DEFAULT '{}',
+    first_name TEXT,
+    last_name TEXT,
+    email TEXT,
+    address TEXT,
+    city TEXT,
+    state TEXT,
+    postal_code TEXT,
+    date_of_birth TEXT,
+    annual_income REAL,
+    employment_status TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+  );
+
   CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
   CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
   CREATE INDEX IF NOT EXISTS idx_banks_user_id ON banks(user_id);
   CREATE INDEX IF NOT EXISTS idx_banks_account_id ON banks(account_id);
+  CREATE INDEX IF NOT EXISTS idx_loan_applications_user_id ON loan_applications(user_id);
+  CREATE INDEX IF NOT EXISTS idx_loan_applications_status ON loan_applications(status);
 `);
 
   return _db;

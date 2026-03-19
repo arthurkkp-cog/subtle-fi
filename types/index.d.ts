@@ -26,6 +26,7 @@ declare type LoginUser = {
 };
 
 declare type User = {
+  id?: string;
   $id: string;
   email: string;
   userId: string;
@@ -333,4 +334,141 @@ declare interface UrlQueryParams {
   params: string;
   key: string;
   value: string;
+}
+
+// ========================================
+// Loans Feature Types
+// ========================================
+
+declare type LoanType = "mortgage" | "auto" | "personal" | "education";
+
+declare type LoanApplicationStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "denied";
+
+declare type LoanStatus = "current" | "late" | "defaulted" | "paid_off" | "in_grace_period";
+
+declare type Loan = {
+  id: string;
+  userId: string;
+  loanType: LoanType;
+  name: string;
+  institutionName: string;
+  accountId: string;
+  originalAmount: number;
+  remainingBalance: number;
+  interestRate: number;
+  monthlyPayment: number;
+  status: LoanStatus;
+  originationDate: string;
+  maturityDate?: string;
+  lastPaymentDate?: string;
+  nextPaymentDueDate?: string;
+  propertyAddress?: string;
+};
+
+declare type LoanApplication = {
+  id: string;
+  userId: string;
+  loanType: LoanType;
+  requestedAmount: number;
+  termMonths: number;
+  status: LoanApplicationStatus;
+  estimatedAPR: number;
+  estimatedMonthlyPayment: number;
+  conditionalFields: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  dateOfBirth?: string;
+  annualIncome?: number;
+  employmentStatus?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+declare type LoansSummary = {
+  totalLoans: number;
+  outstandingBalance: number;
+  totalMonthlyPayment: number;
+  loans: Loan[];
+};
+
+declare interface LoanSummaryCardsProps {
+  totalLoans: number;
+  outstandingBalance: number;
+  totalMonthlyPayment: number;
+}
+
+declare interface ActiveLoansTableProps {
+  loans: Loan[];
+}
+
+declare interface LoanApplicationFormProps {
+  user: User;
+  draftApplication?: LoanApplication | null;
+}
+
+declare interface LoanCalculatorBarProps {
+  loanType: LoanType | null;
+  amount: number;
+  termMonths: number;
+  estimatedAPR: number;
+}
+
+declare interface CreateLoanApplicationParams {
+  userId: string;
+  loanType: LoanType;
+  requestedAmount: number;
+  termMonths: number;
+  status: LoanApplicationStatus;
+  estimatedAPR: number;
+  estimatedMonthlyPayment: number;
+  conditionalFields: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  dateOfBirth?: string;
+  annualIncome?: number;
+  employmentStatus?: string;
+}
+
+declare interface UpdateLoanApplicationParams {
+  id: string;
+  loanType?: LoanType;
+  requestedAmount?: number;
+  termMonths?: number;
+  status?: LoanApplicationStatus;
+  estimatedAPR?: number;
+  estimatedMonthlyPayment?: number;
+  conditionalFields?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  dateOfBirth?: string;
+  annualIncome?: number;
+  employmentStatus?: string;
+}
+
+declare interface LoansProps {
+  userId: string;
+}
+
+declare interface LoanApplicationProps {
+  applicationId: string;
 }
