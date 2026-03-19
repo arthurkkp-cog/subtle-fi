@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  build:
+    name: Build
+    needs: [lint, typecheck]
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder env vars so Next.js build can compile without real secrets
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_APPWRITE_ENDPOINT: https://cloud.appwrite.io/v1
+      NEXT_PUBLIC_APPWRITE_PROJECT: placeholder
+      APPWRITE_DATABASE_ID: placeholder
+      APPWRITE_USER_COLLECTION_ID: placeholder
+      APPWRITE_BANK_COLLECTION_ID: placeholder
+      APPWRITE_TRANSACTION_COLLECTION_ID: placeholder
+      NEXT_APPWRITE_KEY: placeholder
+      PLAID_CLIENT_ID: placeholder
+      PLAID_SECRET: placeholder
+      PLAID_ENV: sandbox
+      PLAID_PRODUCTS: auth
+      PLAID_COUNTRY_CODES: US
+      DWOLLA_KEY: placeholder
+      DWOLLA_SECRET: placeholder
+      DWOLLA_BASE_URL: https://api-sandbox.dwolla.com
+      DWOLLA_ENV: sandbox
+      SENTRY_AUTH_TOKEN: placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Build Next.js app
+        id: build
+        run: |
+          npm run build 2>&1 | tee build-output.log
+          echo "build_status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-output.log
+          retention-days: 7
+
+  analyze-logs:
+    name: Devin CLI - Analyze Build Logs
+    needs: [build]
+    if: ${{ failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build log
+        uses: actions/download-artifact@v4
+        with:
+          name: build-log
+
+      - name: Install Devin CLI
+        run: |
+          curl -fsSL https://static.devin.ai/cli-insiders-d029bf81/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Analyze build logs with Devin CLI
+        env:
+          WINDSURF_API_KEY: ${{ secrets.WINDSURF_API_KEY }}
+        run: |
+          echo "## Devin CLI Build Log Analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          devin -p --permission-mode dangerous \
+            -- "Read the file at ./build-output.log. It contains the CI build output for a Next.js application. Provide a concise summary of: 1) What failed, 2) Why it failed, 3) Suggested fixes. Be direct and actionable." \
+            | tee analysis-output.txt
+
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat analysis-output.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
