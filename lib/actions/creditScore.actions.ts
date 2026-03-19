@@ -196,18 +196,11 @@ export const getCreditScoreHistory = async ({
     );
 
     // Return in chronological order (oldest first) for the chart
-    const docs = snapshots.documents.reverse().map(doc => ({
-      $id: doc.$id,
-      userId: doc.userId as string,
-      timestamp: doc.timestamp as string,
-      estimatedScore: doc.estimatedScore as number,
-      utilization: doc.utilization as number,
-      totalBalance: doc.totalBalance as number,
-      totalLimit: doc.totalLimit as number,
-      accountCount: doc.accountCount as number,
-    }));
+    const rawDocs: CreditScoreSnapshot[] = parseStringify(
+      snapshots.documents.reverse(),
+    );
 
-    return parseStringify(docs);
+    return rawDocs;
   } catch (error) {
     console.error("Error fetching credit score history:", error);
     return [];
