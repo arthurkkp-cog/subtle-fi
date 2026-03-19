@@ -128,7 +128,48 @@ export const getCreditScoreData = async ({
 };
 
 /**
+ * Get the most recent snapshot for a user to check if enough time has
+ * elapsed before saving a new one (deduplication).
+ */
+export const getLatestSnapshot = async ({
+  userId,
+}: {
+  userId: string;
+}): Promise<CreditScoreSnapshot | null> => {
+  try {
+    if (!DATABASE_ID || !CREDIT_SCORE_COLLECTION_ID) {
+      return null;
+    }
+
+    const { database } = await createAdminClient();
+
+    const result = await database.listDocuments(
+      DATABASE_ID,
+      CREDIT_SCORE_COLLECTION_ID,
+      [
+        Query.equal("userId", [userId]),
+        Query.orderDesc("timestamp"),
+        Query.limit(1),
+      ],
+    );
+
+    if (result.documents.length === 0) {
+      return null;
+    }
+
+    return parseStringify(result.documents[0]);
+  } catch (error) {
+    console.error("Error fetching latest snapshot:", error);
+    return null;
+  }
+};
+
+const SNAPSHOT_COOLDOWN_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
  * Save a credit score snapshot to Appwrite for historical tracking.
+ * Deduplicates by checking the most recent snapshot and only saving
+ * if at least 24 hours have elapsed.
  */
 export const saveCreditScoreSnapshot = async (
   snapshot: Omit<CreditScoreSnapshot, "$id">,
@@ -139,6 +180,17 @@ export const saveCreditScoreSnapshot = async (
         "Credit score collection not configured. Skipping snapshot save.",
       );
       return null;
+    }
+
+    // Check if a recent snapshot already exists (deduplication)
+    const latest = await getLatestSnapshot({ userId: snapshot.userId });
+    if (latest) {
+      const elapsed =
+        new Date(snapshot.timestamp).getTime() -
+        new Date(latest.timestamp).getTime();
+      if (elapsed < SNAPSHOT_COOLDOWN_MS) {
+        return latest;
+      }
     }
 
     const { database } = await createAdminClient();
