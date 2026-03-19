@@ -8,116 +8,136 @@ import { parseStringify } from "@/lib/utils";
 import { getTransactionsByBankId } from "@/lib/actions/transaction.actions";
 import { getBank, getBanks } from "@/lib/actions/user.actions";
 
+// Mock account data for local development
+const MOCK_ACCOUNTS: Record<string, { name: string; officialName: string; balance: number; type: string; subtype: string; institutionId: string; mask: string }> = {
+  "chase-checking-456": {
+    name: "Mizuho Bank Checking",
+    officialName: "Mizuho Bank Total Checking",
+    balance: 12543.67,
+    type: "depository",
+    subtype: "checking",
+    institutionId: "ins_3",
+    mask: "4567",
+  },
+  "bofa-savings-012": {
+    name: "Mizuho Trust Savings",
+    officialName: "Mizuho Trust & Banking Advantage Savings",
+    balance: 45231.89,
+    type: "depository",
+    subtype: "savings",
+    institutionId: "ins_4",
+    mask: "0123",
+  },
+};
+
 // Get multiple bank accounts
 export const getAccounts = async ({ userId }: AccountsProps) => {
   try {
     // get banks from db
     const banks = await getBanks({ userId });
 
-    const accounts = await Promise.all(
-      banks?.map(async (bank: Bank) => {
-        // get each account info from plaid
-        const accountsResponse = await plaidClient.accountsGet({
-          access_token: bank.accessToken,
-        });
-        const accountData = accountsResponse.data.accounts[0];
+    if (!banks || banks.length === 0) {
+      return parseStringify({ data: [], totalBanks: 0, totalCurrentBalance: 0, transactions: [] });
+    }
 
-        // get institution info from plaid
-        const institution = await getInstitution({
-          institutionId: accountsResponse.data.item.institution_id!,
-        });
+    const accounts = banks.map((bank: Bank) => {
+      const mockData = MOCK_ACCOUNTS[bank.accountId] || {
+        name: "Unknown Account",
+        officialName: "Unknown Account",
+        balance: 0,
+        type: "depository",
+        subtype: "checking",
+        institutionId: "ins_unknown",
+        mask: "0000",
+      };
 
-        const account = {
-          id: accountData.account_id,
-          availableBalance: accountData.balances.available!,
-          currentBalance: accountData.balances.current!,
-          institutionId: institution.institution_id,
-          name: accountData.name,
-          officialName: accountData.official_name,
-          mask: accountData.mask!,
-          type: accountData.type as string,
-          subtype: accountData.subtype! as string,
-          appwriteItemId: bank.$id,
-          shareableId: bank.shareableId,
-        };
-
-        return account;
-      }),
-    );
+      return {
+        id: bank.accountId,
+        availableBalance: mockData.balance,
+        currentBalance: mockData.balance,
+        institutionId: mockData.institutionId,
+        name: mockData.name,
+        officialName: mockData.officialName,
+        mask: mockData.mask,
+        type: mockData.type,
+        subtype: mockData.subtype,
+        appwriteItemId: bank.$id || (bank as any).id,
+        shareableId: bank.shareableId,
+      };
+    });
 
     const totalBanks = accounts.length;
-    const totalCurrentBalance = accounts.reduce((total, account) => {
+    const totalCurrentBalance = accounts.reduce((total: number, account: any) => {
       return total + account.currentBalance;
     }, 0);
 
-    return parseStringify({ data: accounts, totalBanks, totalCurrentBalance });
+    // Mock transactions for display
+    const mockTransactions = [
+      { id: "t1", name: "Starbucks", amount: -5.75, date: new Date().toISOString(), category: "Food and Drink", type: "debit" },
+      { id: "t2", name: "Amazon", amount: -129.99, date: new Date(Date.now() - 86400000).toISOString(), category: "Shopping", type: "debit" },
+      { id: "t3", name: "Payroll Deposit", amount: 3500.00, date: new Date(Date.now() - 172800000).toISOString(), category: "Transfer", type: "credit" },
+    ];
+
+    return parseStringify({ data: accounts, totalBanks, totalCurrentBalance, transactions: mockTransactions });
   } catch (error) {
     console.error("An error occurred while getting the accounts:", error);
+    return parseStringify({ data: [], totalBanks: 0, totalCurrentBalance: 0, transactions: [] });
   }
 };
 
 // Get one bank account
 export const getAccount = async ({ appwriteItemId }: AccountProps) => {
   try {
+    if (!appwriteItemId) {
+      return parseStringify({ data: null, transactions: [] });
+    }
+
     // get bank from db
     const bank = await getBank({ documentId: appwriteItemId });
 
-    // get account info from plaid
-    const accountsResponse = await plaidClient.accountsGet({
-      access_token: bank.accessToken,
-    });
-    const accountData = accountsResponse.data.accounts[0];
+    if (!bank) {
+      return parseStringify({ data: null, transactions: [] });
+    }
 
-    // get transfer transactions from appwrite
-    const transferTransactionsData = await getTransactionsByBankId({
-      bankId: bank.$id,
-    });
-
-    const transferTransactions = transferTransactionsData.documents.map(
-      (transferData: Transaction) => ({
-        id: transferData.$id,
-        name: transferData.name!,
-        amount: transferData.amount!,
-        date: transferData.$createdAt,
-        paymentChannel: transferData.channel,
-        category: transferData.category,
-        type: transferData.senderBankId === bank.$id ? "debit" : "credit",
-      }),
-    );
-
-    // get institution info from plaid
-    const institution = await getInstitution({
-      institutionId: accountsResponse.data.item.institution_id!,
-    });
-
-    const transactions = await getTransactions({
-      accessToken: bank?.accessToken,
-    });
-
-    const account = {
-      id: accountData.account_id,
-      availableBalance: accountData.balances.available!,
-      currentBalance: accountData.balances.current!,
-      institutionId: institution.institution_id,
-      name: accountData.name,
-      officialName: accountData.official_name,
-      mask: accountData.mask!,
-      type: accountData.type as string,
-      subtype: accountData.subtype! as string,
-      appwriteItemId: bank.$id,
+    const mockData = MOCK_ACCOUNTS[bank.accountId] || {
+      name: "Unknown Account",
+      officialName: "Unknown Account",
+      balance: 0,
+      type: "depository",
+      subtype: "checking",
+      institutionId: "ins_unknown",
+      mask: "0000",
     };
 
-    // sort transactions by date such that the most recent transaction is first
-    const allTransactions = [...transactions, ...transferTransactions].sort(
-      (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
-    );
+    const account = {
+      id: bank.accountId,
+      availableBalance: mockData.balance,
+      currentBalance: mockData.balance,
+      institutionId: mockData.institutionId,
+      name: mockData.name,
+      officialName: mockData.officialName,
+      mask: mockData.mask,
+      type: mockData.type,
+      subtype: mockData.subtype,
+      appwriteItemId: bank.$id || (bank as any).id,
+    };
+
+    // Mock transactions
+    const mockTransactions = [
+      { id: "t1", name: "Starbucks", amount: -5.75, date: new Date().toISOString(), paymentChannel: "in store", category: "Food and Drink", type: "debit", image: "/icons/a-coffee.svg" },
+      { id: "t2", name: "Amazon", amount: -129.99, date: new Date(Date.now() - 86400000).toISOString(), paymentChannel: "online", category: "Shopping", type: "debit", image: null },
+      { id: "t3", name: "Payroll Deposit", amount: 3500.00, date: new Date(Date.now() - 172800000).toISOString(), paymentChannel: "other", category: "Transfer", type: "credit", image: null },
+      { id: "t4", name: "Netflix", amount: -15.99, date: new Date(Date.now() - 259200000).toISOString(), paymentChannel: "online", category: "Entertainment", type: "debit", image: null },
+      { id: "t5", name: "Uber", amount: -24.50, date: new Date(Date.now() - 345600000).toISOString(), paymentChannel: "online", category: "Travel", type: "debit", image: null },
+    ];
 
     return parseStringify({
       data: account,
-      transactions: allTransactions,
+      transactions: mockTransactions,
     });
   } catch (error) {
     console.error("An error occurred while getting the account:", error);
+    return parseStringify({ data: null, transactions: [] });
   }
 };
 

@@ -8,8 +8,19 @@ import { getCurrentUser } from "@/lib/actions/user.actions";
 const Home = async ({ searchParams: { id, page } }: SearchParamProps) => {
   const currentPage = Number(page as string) || 1;
   const currentUser = await getCurrentUser();
+  
+  if (!currentUser) {
+    return (
+      <section className="home">
+        <div className="home-content">
+          <p>Please sign in to view your accounts.</p>
+        </div>
+      </section>
+    );
+  }
+
   const accounts = await getAccounts({
-    userId: currentUser.$id,
+    userId: currentUser.id || currentUser.$id!,
   });
 
   if (!accounts) return;
