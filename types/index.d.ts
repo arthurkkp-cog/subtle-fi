@@ -334,3 +334,67 @@ declare interface UrlQueryParams {
   key: string;
   value: string;
 }
+
+// ========================================
+// Credit Score Types
+// ========================================
+
+declare type CreditAccount = {
+  accountId: string;
+  name: string;
+  officialName: string | null;
+  type: "revolving" | "charge" | string;
+  currentBalance: number;
+  creditLimit: number | null;
+  utilization: number | null;
+  isOverLimit: boolean;
+  lastPaymentAmount: number | null;
+  lastPaymentDate: string | null;
+  minimumPaymentAmount: number | null;
+};
+
+declare type CreditScoreData = {
+  estimatedScore: number;
+  scoreLabel: string;
+  scoreColor: string;
+  utilization: number;
+  totalBalance: number;
+  totalLimit: number;
+  accountCount: number;
+  accounts: CreditAccount[];
+  factors: CreditFactor[];
+};
+
+declare type CreditFactor = {
+  label: string;
+  impact: "positive" | "negative" | "neutral";
+  description: string;
+};
+
+declare type CreditScoreSnapshot = {
+  $id?: string;
+  userId: string;
+  timestamp: string;
+  estimatedScore: number;
+  utilization: number;
+  totalBalance: number;
+  totalLimit: number;
+  accountCount: number;
+};
+
+declare interface CreditScoreGaugeProps {
+  score: number;
+  label: string;
+}
+
+declare interface ScoreHistoryChartProps {
+  snapshots: CreditScoreSnapshot[];
+}
+
+declare interface CreditAccountsListProps {
+  accounts: CreditAccount[];
+}
+
+declare interface CreditFactorsProps {
+  factors: CreditFactor[];
+}
