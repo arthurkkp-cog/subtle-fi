@@ -96,9 +96,25 @@ export const getUserLoans = async ({
 
           const liabilities = liabilitiesResponse.data.liabilities;
 
+          // Build a Map of account balances keyed by account_id for efficient lookups
+          const accountBalances = new Map<string, number>();
+          for (const account of liabilitiesResponse.data.accounts) {
+            if (account.balances.current != null) {
+              accountBalances.set(account.account_id, account.balances.current);
+            }
+          }
+
           // Process student loans
           if (liabilities.student) {
             for (const studentLoan of liabilities.student) {
+              // Use account balance (balances.current) as the primary source for remaining balance
+              const accountBalance = studentLoan.account_id
+                ? accountBalances.get(studentLoan.account_id)
+                : undefined;
+              const fallbackBalance = studentLoan.outstanding_interest_amount
+                ? (studentLoan.outstanding_interest_amount + (studentLoan.origination_principal_amount || 0))
+                : studentLoan.origination_principal_amount || 0;
+
               loans.push({
                 id: `plaid-student-${studentLoan.account_id}`,
                 userId,
@@ -107,9 +123,7 @@ export const getUserLoans = async ({
                 institutionName: studentLoan.servicer_address?.city || "Student Loan Servicer",
                 accountId: studentLoan.account_id || "",
                 originalAmount: studentLoan.origination_principal_amount || 0,
-                remainingBalance: studentLoan.outstanding_interest_amount
-                  ? (studentLoan.outstanding_interest_amount + (studentLoan.origination_principal_amount || 0))
-                  : studentLoan.origination_principal_amount || 0,
+                remainingBalance: accountBalance ?? fallbackBalance,
                 interestRate: studentLoan.interest_rate_percentage || 0,
                 monthlyPayment: studentLoan.minimum_payment_amount || 0,
                 status: "current",
@@ -124,6 +138,10 @@ export const getUserLoans = async ({
           // Process mortgages
           if (liabilities.mortgage) {
             for (const mortgage of liabilities.mortgage) {
+              // Use account balance (balances.current) as the primary source for remaining balance
+              const accountBalance = accountBalances.get(mortgage.account_id);
+              const fallbackBalance = mortgage.origination_principal_amount || 0;
+
               loans.push({
                 id: `plaid-mortgage-${mortgage.account_id}`,
                 userId,
@@ -132,9 +150,7 @@ export const getUserLoans = async ({
                 institutionName: "Mortgage Lender",
                 accountId: mortgage.account_id,
                 originalAmount: mortgage.origination_principal_amount || 0,
-                remainingBalance: mortgage.current_late_fee
-                  ? mortgage.current_late_fee
-                  : mortgage.origination_principal_amount || 0,
+                remainingBalance: accountBalance ?? fallbackBalance,
                 interestRate: mortgage.interest_rate?.percentage || 0,
                 monthlyPayment: mortgage.last_payment_amount || 0,
                 status: mortgage.past_due_amount && mortgage.past_due_amount > 0 ? "late" : "current",
