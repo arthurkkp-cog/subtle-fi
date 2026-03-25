@@ -17,7 +17,9 @@ const TransactionHistory = async ({
   const appwriteItemId = (id as string) || accounts?.data[0]?.appwriteItemId;
   const account = await getAccount(appwriteItemId);
 
-  const { currentBalance, name, officialName, mask } = account?.data;
+  if (!account || !account.data) return;
+
+  const { currentBalance, name, officialName, mask } = account.data;
 
   return (
     <section className="transactions">

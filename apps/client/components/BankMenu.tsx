@@ -41,7 +41,7 @@ const BankMenu = ({
 
   return (
     <Select
-      defaultValue={selected?.id}
+      defaultValue={selected?.appwriteItemId}
       onValueChange={value => handleBankChange(value)}
     >
       <SelectTrigger

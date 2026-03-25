@@ -24,15 +24,17 @@ export async function GET(request: NextRequest) {
 
     let hasMore = true;
     let transactions: any = [];
+    let cursor: string | undefined = undefined;
 
     while (hasMore) {
       const response = await plaidClient.transactionsSync({
         access_token: accessToken,
+        ...(cursor ? { cursor } : {}),
       });
 
       const data = response.data;
 
-      transactions = response.data.added.map((transaction) => ({
+      transactions = transactions.concat(response.data.added.map((transaction) => ({
         id: transaction.transaction_id,
         name: transaction.name,
         paymentChannel: transaction.payment_channel,
@@ -43,8 +45,9 @@ export async function GET(request: NextRequest) {
         category: transaction.category ? transaction.category[0] : "",
         date: transaction.date,
         image: transaction.logo_url,
-      }));
+      })));
 
+      cursor = data.next_cursor;
       hasMore = data.has_more;
     }
 
