@@ -1,0 +1,166 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+
+  build:
+    name: Build
+    needs: [lint, typecheck]
+    runs-on: ubuntu-latest
+    env:
+      # Placeholder env vars so Next.js build can compile without real secrets
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_APPWRITE_ENDPOINT: https://cloud.appwrite.io/v1
+      NEXT_PUBLIC_APPWRITE_PROJECT: placeholder
+      APPWRITE_DATABASE_ID: placeholder
+      APPWRITE_USER_COLLECTION_ID: placeholder
+      APPWRITE_BANK_COLLECTION_ID: placeholder
+      APPWRITE_TRANSACTION_COLLECTION_ID: placeholder
+      NEXT_APPWRITE_KEY: placeholder
+      PLAID_CLIENT_ID: placeholder
+      PLAID_SECRET: placeholder
+      PLAID_ENV: sandbox
+      PLAID_PRODUCTS: auth
+      PLAID_COUNTRY_CODES: US
+      DWOLLA_KEY: placeholder
+      DWOLLA_SECRET: placeholder
+      DWOLLA_BASE_URL: https://api-sandbox.dwolla.com
+      DWOLLA_ENV: sandbox
+      # Note: SENTRY_AUTH_TOKEN is intentionally not set so the Sentry plugin
+      # skips source map uploads during CI builds
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      - name: Build Next.js app
+        id: build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee build-output.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build-output.log
+          retention-days: 7
+
+  analyze-logs:
+    name: Devin CLI - Analyze Build Logs
+    needs: [lint, typecheck, build]
+    if: ${{ always() && (needs.lint.result == 'failure' || needs.typecheck.result == 'failure' || needs.build.result == 'failure') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build log
+        id: download-log
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: build-log
+
+      - name: Collect failure context
+        run: |
+          echo "=== CI Failure Summary ===" > ci-context.txt
+          echo "Lint: ${{ needs.lint.result }}" >> ci-context.txt
+          echo "Type Check: ${{ needs.typecheck.result }}" >> ci-context.txt
+          echo "Build: ${{ needs.build.result }}" >> ci-context.txt
+          echo "" >> ci-context.txt
+          if [ -f build-output.log ]; then
+            echo "=== Build Output Log ==="  >> ci-context.txt
+            cat build-output.log >> ci-context.txt
+          else
+            echo "No build log available (build job was skipped or did not produce output)." >> ci-context.txt
+            echo "The failure likely occurred in an earlier job (lint or typecheck)." >> ci-context.txt
+          fi
+
+      - name: Authenticate Chisel
+        env:
+          WINDSURF_API_KEY: ${{ secrets.WINDSURF_API_KEY }}
+        run: |
+          mkdir -p ~/.local/share/devin
+          cat > ~/.local/share/devin/credentials.toml <<EOF
+          windsurf_api_key = "$WINDSURF_API_KEY"
+          api_server_url = "https://register.codeium.com"
+          EOF
+
+      - name: Install Devin CLI
+        run: |
+          # Download and install the CLI binary (strip interactive setup call)
+          curl -fsSL https://cli.devin.ai/install.sh | sed '/setup$/d' | bash
+
+          # Add to PATH
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+
+          # Verify install and auth
+          devin --version
+          devin auth status 2>&1 || true
+
+      - name: Analyze build logs with Devin CLI
+        env:
+          WINDSURF_API_KEY: ${{ secrets.WINDSURF_API_KEY }}
+        run: |
+          echo "## Devin CLI Build Log Analysis" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          # Pre-set theme to skip interactive first-run prompt
+          mkdir -p ~/.config/devin
+          echo '{"theme_mode": "dark"}' > ~/.config/devin/config.json
+
+          set -o pipefail
+          if devin -p --permission-mode dangerous \
+            -- "Read the file at ./ci-context.txt. It contains CI failure context for a Next.js application including which jobs failed (lint, typecheck, build) and any available build logs. Analyze the codebase and the failure context to provide a concise summary of: 1) What failed, 2) Why it failed, 3) Suggested fixes. Be direct and actionable." \
+            2>&1 | tee analysis-output.txt; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat analysis-output.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ Devin CLI analysis was skipped (no model access configured)." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "To enable analysis, ensure your WINDSURF_API_KEY has model access," >> "$GITHUB_STEP_SUMMARY"
+            echo "or add an ANTHROPIC_API_KEY secret and use \`--model\` flag." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Raw Failure Context" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat ci-context.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
