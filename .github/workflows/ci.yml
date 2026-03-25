@@ -142,10 +142,24 @@ jobs:
           echo "## Devin CLI Build Log Analysis" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          devin -p --permission-mode dangerous \
-            -- "Read the file at ./ci-context.txt. It contains CI failure context for a Next.js application including which jobs failed (lint, typecheck, build) and any available build logs. Analyze the codebase and the failure context to provide a concise summary of: 1) What failed, 2) Why it failed, 3) Suggested fixes. Be direct and actionable." \
-            | tee analysis-output.txt
+          # Pre-set theme to skip interactive first-run prompt
+          mkdir -p ~/.config/devin
+          echo '{"theme_mode": "dark"}' > ~/.config/devin/config.json
 
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-          cat analysis-output.txt >> "$GITHUB_STEP_SUMMARY"
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if devin -p --permission-mode dangerous \
+            -- "Read the file at ./ci-context.txt. It contains CI failure context for a Next.js application including which jobs failed (lint, typecheck, build) and any available build logs. Analyze the codebase and the failure context to provide a concise summary of: 1) What failed, 2) Why it failed, 3) Suggested fixes. Be direct and actionable." \
+            | tee analysis-output.txt; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat analysis-output.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ Devin CLI analysis was skipped (no model access configured)." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "To enable analysis, ensure your WINDSURF_API_KEY has model access," >> "$GITHUB_STEP_SUMMARY"
+            echo "or add an ANTHROPIC_API_KEY secret and use \`--model\` flag." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Raw Failure Context" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat ci-context.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
