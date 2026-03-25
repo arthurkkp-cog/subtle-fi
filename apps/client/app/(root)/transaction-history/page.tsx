@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import HeaderBox from "@/components/HeaderBox";
 import TransactionsTable from "@/components/TransactionsTable";
 import { getAccount, getAccounts, getCurrentUser } from "@/lib/api";
@@ -8,6 +9,7 @@ const TransactionHistory = async ({
 }: SearchParamProps) => {
   const currentPage = Number(page as string) || 1;
   const currentUser = await getCurrentUser();
+  if (!currentUser) redirect("/sign-in");
   const accounts = await getAccounts(currentUser.$id || currentUser.id);
 
   if (!accounts) return;
