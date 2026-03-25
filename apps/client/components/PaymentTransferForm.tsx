@@ -89,9 +89,9 @@ const PaymentTransferForm = ({ accounts }: PaymentTransferFormProps) => {
       }
     } catch (error) {
       console.error("Submitting create transfer request failed: ", error);
+    } finally {
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   return (
