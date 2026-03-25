@@ -146,9 +146,10 @@ jobs:
           mkdir -p ~/.config/devin
           echo '{"theme_mode": "dark"}' > ~/.config/devin/config.json
 
+          set -o pipefail
           if devin -p --permission-mode dangerous \
             -- "Read the file at ./ci-context.txt. It contains CI failure context for a Next.js application including which jobs failed (lint, typecheck, build) and any available build logs. Analyze the codebase and the failure context to provide a concise summary of: 1) What failed, 2) Why it failed, 3) Suggested fixes. Be direct and actionable." \
-            | tee analysis-output.txt; then
+            2>&1 | tee analysis-output.txt; then
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             cat analysis-output.txt >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
