@@ -55,6 +55,11 @@ const PaymentTransferForm = ({ accounts }: PaymentTransferFormProps) => {
       const receiverBank = await getBankByAccountId(receiverAccountId);
       const senderBank = await getBank(data.senderBank);
 
+      if (!receiverBank || !senderBank) {
+        console.error("Could not find sender or receiver bank");
+        return;
+      }
+
       const transferParams = {
         sourceFundingSourceUrl: senderBank.fundingSourceUrl,
         destinationFundingSourceUrl: receiverBank.fundingSourceUrl,

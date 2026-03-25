@@ -25,7 +25,7 @@ const BankCard = ({ account, fullName, showBalance = true }: BankCardProps) => {
               <h2 className="text-12 font-semibold text-white">●● / ●●</h2>
             </div>
             <p className="text-14 font-semibold tracking-[1.1px] text-white">
-              ●●●● ●●●● ●●●●{mask}
+              ●●●● ●●●● ●●●● {mask}
             </p>
           </article>
         </div>

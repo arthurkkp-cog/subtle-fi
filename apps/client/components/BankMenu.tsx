@@ -48,7 +48,7 @@ const BankMenu = ({
         className={`flex w-full gap-3 md:w-[300px] ${otherStyles} `}
       >
         <Image
-          src="icons/credit-card.svg"
+          src="/icons/credit-card.svg"
           width={20}
           height={20}
           alt="account"
