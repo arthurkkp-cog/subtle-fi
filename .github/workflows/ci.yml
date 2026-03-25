@@ -70,8 +70,8 @@ jobs:
       - name: Build Next.js app
         id: build
         run: |
+          set -o pipefail
           npm run build 2>&1 | tee build-output.log
-          echo "build_status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Upload build log
         if: always()
@@ -115,12 +115,11 @@ jobs:
         env:
           WINDSURF_API_KEY: ${{ secrets.WINDSURF_API_KEY }}
         run: |
-          # Write credentials BEFORE install so the setup wizard finds them
-          # Docker docs use cognition/ path; also write to devin/ for new versions
-          for dir in "$HOME/.local/share/cognition" "$HOME/.local/share/devin"; do
-            mkdir -p "$dir"
-            echo "windsurf_api_key = \"$WINDSURF_API_KEY\"" > "$dir/credentials.toml"
-          done
+          # Write credentials BEFORE install so the CLI skips browser auth
+          mkdir -p "$HOME/.local/share/cognition"
+          cat > "$HOME/.local/share/cognition/credentials.toml" <<EOF
+          windsurf_api_key = "$WINDSURF_API_KEY"
+          EOF
 
           # Download and install the CLI binary (strip interactive setup call)
           curl -fsSL https://cli.devin.ai/install.sh | sed '/setup$/d' | bash
@@ -129,27 +128,18 @@ jobs:
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.local/bin:$PATH"
 
-          # Run setup non-interactively (credentials already in place)
+          # Verify install and auth
           devin --version
-          echo "Auth check:"
           devin auth status 2>&1 || true
 
       - name: Analyze build logs with Devin CLI
         env:
           WINDSURF_API_KEY: ${{ secrets.WINDSURF_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           echo "## Devin CLI Build Log Analysis" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
 
-          # Try default backend first; fall back to anthropic backend if available
-          if [ -n "$ANTHROPIC_API_KEY" ]; then
-            BACKEND_FLAG="--backend anthropic"
-          else
-            BACKEND_FLAG=""
-          fi
-
-          devin -p $BACKEND_FLAG --permission-mode dangerous \
+          devin -p --permission-mode dangerous \
             -- "Read the file at ./ci-context.txt. It contains CI failure context for a Next.js application including which jobs failed (lint, typecheck, build) and any available build logs. Analyze the codebase and the failure context to provide a concise summary of: 1) What failed, 2) Why it failed, 3) Suggested fixes. Be direct and actionable." \
             | tee analysis-output.txt
 
