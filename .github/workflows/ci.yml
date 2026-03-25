@@ -112,14 +112,18 @@ jobs:
             echo "The failure likely occurred in an earlier job (lint or typecheck)." >> ci-context.txt
           fi
 
-      - name: Install and authenticate Devin CLI
+      - name: Authenticate Chisel
         env:
           WINDSURF_API_KEY: ${{ secrets.WINDSURF_API_KEY }}
         run: |
-          # Write credentials BEFORE install so the CLI skips browser auth
-          mkdir -p "$HOME/.local/share/cognition"
-          echo "windsurf_api_key = \"$WINDSURF_API_KEY\"" > "$HOME/.local/share/cognition/credentials.toml"
+          mkdir -p ~/.local/share/devin
+          cat > ~/.local/share/devin/credentials.toml <<EOF
+          windsurf_api_key = "$WINDSURF_API_KEY"
+          api_server_url = "https://register.codeium.com"
+          EOF
 
+      - name: Install Devin CLI
+        run: |
           # Download and install the CLI binary (strip interactive setup call)
           curl -fsSL https://cli.devin.ai/install.sh | sed '/setup$/d' | bash
 
