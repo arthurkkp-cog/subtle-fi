@@ -58,7 +58,8 @@ jobs:
       DWOLLA_SECRET: placeholder
       DWOLLA_BASE_URL: https://api-sandbox.dwolla.com
       DWOLLA_ENV: sandbox
-      SENTRY_AUTH_TOKEN: placeholder
+      # Note: SENTRY_AUTH_TOKEN is intentionally not set so the Sentry plugin
+      # skips source map uploads during CI builds
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
