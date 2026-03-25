@@ -117,9 +117,7 @@ jobs:
         run: |
           # Write credentials BEFORE install so the CLI skips browser auth
           mkdir -p "$HOME/.local/share/cognition"
-          cat > "$HOME/.local/share/cognition/credentials.toml" <<EOF
-          windsurf_api_key = "$WINDSURF_API_KEY"
-          EOF
+          echo "windsurf_api_key = \"$WINDSURF_API_KEY\"" > "$HOME/.local/share/cognition/credentials.toml"
 
           # Download and install the CLI binary (strip interactive setup call)
           curl -fsSL https://cli.devin.ai/install.sh | sed '/setup$/d' | bash
